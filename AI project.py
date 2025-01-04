@@ -13,10 +13,12 @@ from googletrans import Translator
 import os
 import subprocess
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
+import threading
+import math 
 
-engine = pyttsx3.init('sapi5')  
-voices = engine.getProperty('voices')  
+engine = pyttsx3.init('sapi5')
+voices = engine.getProperty('voices')
 engine.setProperty('voice', voices[1].id)
 
 def speak(text):
@@ -29,7 +31,7 @@ def listen():
     with sr.Microphone() as source:
         print("Listening...")
         recognizer.adjust_for_ambient_noise(source)
-        audio = recognizer.listen(source)
+        audio = recognizer.listen(source, timeout=10)
     try:
         print("Recognizing...")
         query = recognizer.recognize_google(audio, language='en-in')
@@ -41,48 +43,8 @@ def listen():
         speak("Sorry, my speech service is down. Please try again later.")
         return "None"
     return query.lower()
-     
-def get_weather(city):
-    """Function to fetch weather information for a given city."""
-    weather_api_key = '6104bde5d95f43e9e7ec751143be00cc'
-    weather_url = f'http://api.openweathermap.org/data/2.5/weather?q={city}&appid={weather_api_key}'
-    
-    try:
-        response = requests.get(weather_url)
-        response.raise_for_status()
-        weather_data = response.json()
-        
-        if 'weather' in weather_data and len(weather_data['weather']) > 0:
-            weather_description = weather_data['weather'][0]['description']
-            speak(f"Weather in {city}: {weather_description}")
-        else:
-            speak("Sorry, I couldn't retrieve the weather information.")
-    
-    except requests.exceptions.RequestException as e:
-        speak(f"Sorry, I couldn't retrieve the weather information due to an error: {e}")
-
-def listen_for_city():
-    """Function to listen for a city name."""
-    recognizer = sr.Recognizer()
-    with sr.Microphone() as source:
-        speak("Please say the name of the city you want the weather information for.")
-        print("Listening for city name...")
-        recognizer.adjust_for_ambient_noise(source)
-        audio = recognizer.listen(source)
-        
-        try:
-            city = recognizer.recognize_google(audio)
-            print(f"You said: {city}")
-            return city
-        except sr.UnknownValueError:
-            speak("Sorry, I did not understand the city name. Please try again.")
-            return None
-        except sr.RequestError as e:
-            speak(f"Could not request results; {e}")
-            return None
 
 def translate_sentence():
-    """Function to translate a sentence from one language to another."""
     recognizer = sr.Recognizer()
     with sr.Microphone() as source:
         speak("Please say the sentence you want to translate.")
@@ -118,7 +80,6 @@ def translate_sentence():
     speak(f"The translation in {target_language} is: {translation.text}")
 
 def set_timer_gui():
-    """Function to set a timer using a GUI."""
     def start_timer():
         try:
             duration = int(entry.get())
@@ -126,21 +87,23 @@ def set_timer_gui():
             messagebox.showerror("Error", "Please enter a valid number of seconds.")
             return
         window.withdraw()
+        threading.Thread(target=run_timer, args=(duration,)).start()
+
+    def run_timer(duration):
         time.sleep(duration)
         messagebox.showinfo("Timer", "Time's up!")
 
     window = tk.Tk()
     window.title("Set Timer")
-    label = tk.Label(window, text="Enter duration (in seconds):")
-    label.pack()
-    entry = tk.Entry(window)
-    entry.pack()
-    button = tk.Button(window, text="Start Timer", command=start_timer)
-    button.pack()
+    label = ttk.Label(window, text="Enter duration (in seconds):")
+    label.pack(pady=10)
+    entry = ttk.Entry(window)
+    entry.pack(pady=10)
+    button = ttk.Button(window, text="Start Timer", command=start_timer)
+    button.pack(pady=10)
     window.mainloop()
 
 def start_stopwatch():
-    """Function to start the stopwatch with a GUI display."""
     def update_stopwatch():
         if running:
             elapsed_time = time.time() - start_time
@@ -158,21 +121,43 @@ def start_stopwatch():
         nonlocal running
         running = False
 
+    def on_reset():
+        nonlocal running, start_time
+        running = False
+        start_time = 0
+        label.config(text="00:00:00")
+
     window = tk.Tk()
     window.title("Stopwatch")
     start_time = 0
     running = False
 
-    label = tk.Label(window, text="00:00:00", font=("Helvetica", 48))
-    label.pack()
+    label = ttk.Label(window, text="00:00:00", font=("Helvetica", 48))
+    label.pack(pady=20)
 
-    start_button = tk.Button(window, text="Start", command=on_start)
-    start_button.pack(side=tk.LEFT)
+    start_button = ttk.Button(window, text="Start", command=on_start)
+    start_button.pack(side=tk.LEFT, padx=10)
 
-    stop_button = tk.Button(window, text="Stop", command=on_stop)
-    stop_button.pack(side=tk.RIGHT)
+    stop_button = ttk.Button(window, text="Stop", command=on_stop)
+    stop_button.pack(side=tk.LEFT, padx=10)
+
+    reset_button = ttk.Button(window, text="Reset", command=on_reset)
+    reset_button.pack(side=tk.LEFT, padx=10)
 
     window.mainloop()
+
+def open_website():
+    try:
+        speak("Which website do you want me to open?")
+        website = listen()
+        if website != "None":
+            if not website.startswith("www."):
+                website = "www." + website
+            url = f"https://{website}.com"
+            webbrowser.open(url)
+            speak(f"Opening {website}")
+    except Exception as e:
+        speak(f"Sorry, I couldn't open the website. Error: {str(e)}")
 
 def create_note():
     recognizer = sr.Recognizer()
@@ -196,12 +181,11 @@ def create_note():
 
 def assistant(query):
     greetings = ['hi', 'hello', 'hey']
-    salutations = ['bye bye', 'bye','farewell', 'peace out', 'catch you later']
-    
+    salutations = ['bye bye', 'bye', 'farewell', 'peace out', 'catch you later']
+
     if any(greeting in query for greeting in greetings):
         greet_response = random.choice(["Hi there!", "Hello!", "Hey!"])
         speak(greet_response)
-        
     elif 'a timer' in query:
         set_timer_gui()
     elif 'stopwatch' in query:
@@ -224,20 +208,12 @@ def assistant(query):
             print(e.options)
         except wikipedia.exceptions.PageError:
             speak("Sorry, I couldn't find any relevant information.")
+        except requests.exceptions.RequestException:
+            speak("Sorry, I couldn't connect to Wikipedia. Please check your internet connection.")
     elif 'website' in query:
-        speak("Which website do you want me to open?")
-        website = listen()
-        if website != "None":
-            url = f"https://www.{website}.com"
-            webbrowser.open(url)
-            speak(f"Opening {website}")
-            return True  
+        open_website()
     elif 'joke' in query:
         speak(pyjokes.get_joke())
-    elif 'weather' in query:
-        city = listen_for_city()
-        if city:
-            get_weather(city)
     elif 'translate' in query:
         translate_sentence()
     elif 'note' in query:
@@ -245,7 +221,7 @@ def assistant(query):
     elif any(salutation in query for salutation in salutations):
         bye_response = random.choice(['bye-bye', 'farewell', 'peace out', 'catch you later', 'bye'])
         speak(bye_response)
-        return True  
+        return True
     else:
         speak("I'm sorry, I can't help with that.")
     return False
@@ -258,3 +234,4 @@ if __name__ == "__main__":
             continue
         if assistant(query):
             break
+
